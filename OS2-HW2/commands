@@ -1,0 +1,23 @@
+q1: 
+        ./ttt "123456789"
+
+q2:
+        ./mync -e "./ttt 12345689"
+
+q3:
+        ./mync -e "./ttt 123456789" -i TCPS4050
+        ./mync -e "./ttt 123456789" -b TCPS4050
+        ./mync -e "./ttt 123456789" -i TCPS4050 -o TCPClocalhost,4455
+        telnet localhost 4050 / nc localhost 4050
+        telnet localhost 4455 / nc -l 4455
+q4:
+        ./mync -e "./ttt 123456789"-i UDPS4050 -t 10
+        nc -u localhost 4050
+        ./mync -e "./ttt 123456789" -i UDPS4050 -o TCPClocalhost,4455
+        nc -u localhost 4050
+        nc -l 4455
+
+q6:
+        ./mync -e "./ttt 123456789" -i UDSSSsock1
+        ./mync -e "./ttt 123456789" -o UDSSSsock1
+        nc -U sock1
