@@ -1,0 +1,251 @@
+        -:    0:Source:ttt.c
+        -:    0:Graph:ttt.gcno
+        -:    0:Data:ttt.gcda
+        -:    0:Runs:1
+        -:    1:#include <stdio.h>
+        -:    2:#include <stdlib.h>
+        -:    3:#include <string.h>
+        -:    4:#include <ctype.h>
+        -:    5:
+        -:    6:#define SIZE 3  // Define the size of the Tic-Tac-Toe board
+        -:    7:
+        -:    8:/**
+        -:    9: * @brief Initializes the Tic-Tac-Toe board with empty spaces.
+        -:   10: * 
+        -:   11: * @param board The Tic-Tac-Toe board.
+        -:   12: */
+        1:   13:void initializeBoard(char board[SIZE][SIZE]) {
+        4:   14:    for (int i = 0; i < SIZE; ++i) {
+       12:   15:        for (int j = 0; j < SIZE; ++j) {
+        9:   16:            board[i][j] = ' ';  // Set each cell to an empty space
+        -:   17:        }
+        -:   18:    }
+        1:   19:}
+        -:   20:
+        -:   21:/**
+        -:   22: * @brief Displays the current state of the Tic-Tac-Toe board.
+        -:   23: * 
+        -:   24: * @param board The Tic-Tac-Toe board.
+        -:   25: */
+        9:   26:void displayBoard(char board[SIZE][SIZE]) {
+        9:   27:    printf("-------------\n");
+        9:   28:    fflush(stdout);  // Flush after printing the board border
+       36:   29:    for (int i = 0; i < SIZE; i++) {
+      108:   30:        for (int j = 0; j < SIZE; j++) {
+       81:   31:            printf("| %c ", board[i][j]);
+       81:   32:            fflush(stdout);  // Flush after printing each cell
+        -:   33:        }
+       27:   34:        printf("|\n");
+       27:   35:        fflush(stdout);  // Flush after printing row end
+       27:   36:        printf("-------------\n");
+       27:   37:        fflush(stdout);  // Flush after printing row border
+        -:   38:    }
+        9:   39:}
+        -:   40:
+        -:   41:/**
+        -:   42: * @brief Validates the strategy string provided by the AI.
+        -:   43: * 
+        -:   44: * @param strategy The strategy string.
+        -:   45: * @return int Returns 1 if the strategy is valid, 0 otherwise.
+        -:   46: */
+        1:   47:int validateStrategy(const char *strategy) {
+        1:   48:    if (strlen(strategy) != 9) {
+    #####:   49:        return 0;  // Strategy must be exactly 9 characters long
+        -:   50:    }
+        -:   51:
+        1:   52:    int digitCount[10] = {0};  // Array to count occurrences of each digit
+        -:   53:
+       10:   54:    for (int i = 0; i < 9; i++) {
+        9:   55:        if (!isdigit(strategy[i])) {
+    #####:   56:            return 0;  // Each character must be a digit
+        -:   57:        }
+        -:   58:
+        9:   59:        int digit = strategy[i] - '0';  // Convert the character to an integer
+        -:   60:
+        9:   61:        if (digit < 1 || digit > 9) {
+    #####:   62:            return 0;  // Digits must be between 1 and 9
+        -:   63:        }
+        -:   64:
+        9:   65:        digitCount[digit]++;  // Increment the count of the digit
+        -:   66:    }
+        -:   67:
+       10:   68:    for (int i = 1; i <= 9; i++) {
+        9:   69:        if (digitCount[i] != 1) {
+    #####:   70:            return 0;  // Each digit must appear exactly once
+        -:   71:        }
+        -:   72:    }
+        -:   73:
+        1:   74:    return 1;  // Strategy is valid
+        -:   75:}
+        -:   76:
+        -:   77:/**
+        -:   78: * @brief Converts a move number to board indices.
+        -:   79: * 
+        -:   80: * @param number The move number (1-9).
+        -:   81: * @param row Pointer to the row index.
+        -:   82: * @param col Pointer to the column index.
+        -:   83: */
+       27:   84:void getBoardIndices(int number, int *row, int *col) {
+       27:   85:    int index = number - 1;  // Convert the 1-based number to a zero-based index (0-8)
+       27:   86:    *row = index / SIZE;     // Calculate the row index
+       27:   87:    *col = index % SIZE;     // Calculate the column index
+       27:   88:}
+        -:   89:
+        -:   90:/**
+        -:   91: * @brief Checks if a player has a winning move.
+        -:   92: * 
+        -:   93: * @param board The Tic-Tac-Toe board.
+        -:   94: * @param player The player's mark ('X' or 'O').
+        -:   95: * @return int Returns 1 if the player has a winning move, 0 otherwise.
+        -:   96: */
+        9:   97:int isWinningMove(char board[SIZE][SIZE], char player) {
+       36:   98:    for (int i = 0; i < SIZE; i++) {
+      27*:   99:        if ((board[i][0] == player && board[i][1] == player && board[i][2] == player) ||
+       27:  100:            (board[0][i] == player && board[1][i] == player && board[2][i] == player)) {
+    #####:  101:            return 1;  // Winning row or column
+        -:  102:        }
+        -:  103:    }
+        -:  104:
+        9:  105:    if ((board[0][0] == player && board[1][1] == player && board[2][2] == player) ||
+        9:  106:        (board[0][2] == player && board[1][1] == player && board[2][0] == player)) {
+    #####:  107:        return 1;  // Winning diagonal
+        -:  108:    }
+        -:  109:
+        9:  110:    return 0;  // No winning move found
+        -:  111:}
+        -:  112:
+        -:  113:/**
+        -:  114: * @brief Checks if the board is full.
+        -:  115: * 
+        -:  116: * @param board The Tic-Tac-Toe board.
+        -:  117: * @return int Returns 1 if the board is full, 0 otherwise.
+        -:  118: */
+        9:  119:int isBoardFull(char board[SIZE][SIZE]) {
+       20:  120:    for (int i = 0; i < SIZE; i++) {
+       62:  121:        for (int j = 0; j < SIZE; j++) {
+       51:  122:            if (board[i][j] == ' ') {
+        8:  123:                return 0;  // If any empty space is found, board is not full
+        -:  124:            }
+        -:  125:        }
+        -:  126:    }
+        1:  127:    return 1;  // Board is full
+        -:  128:}
+        -:  129:
+        -:  130:/**
+        -:  131: * @brief Makes the AI move based on the strategy.
+        -:  132: * 
+        -:  133: * @param board The Tic-Tac-Toe board.
+        -:  134: * @param strategy The strategy string.
+        -:  135: * @param aiMark The AI's mark ('X' or 'O').
+        -:  136: */
+        5:  137:void makeAIMove(char board[SIZE][SIZE], const char *strategy, char aiMark) {
+       23:  138:    for (int i = 0; i < 9; i++) {
+        -:  139:        int row, col;
+       23:  140:        getBoardIndices(strategy[i] - '0', &row, &col);  // Get the board indices
+        -:  141:
+       23:  142:        if (board[row][col] == ' ') {
+        5:  143:            board[row][col] = aiMark;  // Place the AI's mark on the board
+        5:  144:            printf("%d\n", strategy[i] - '0');  // Print the chosen slot number (1-9)
+        5:  145:            fflush(stdout);  // Flush after printing the AI move
+        5:  146:            return;  // Return after making the move
+        -:  147:        }
+        -:  148:    }
+        -:  149:}
+        -:  150:
+        -:  151:/**
+        -:  152: * @brief Prompts the player to make a move.
+        -:  153: * 
+        -:  154: * @param board The Tic-Tac-Toe board.
+        -:  155: * @param playerMark The player's mark ('X' or 'O').
+        -:  156: */
+        4:  157:void makePlayerMove(char board[SIZE][SIZE], char playerMark) {
+        -:  158:    int move;
+    #####:  159:    while (1) {
+        4:  160:        printf("Enter your move (1-9): ");
+        4:  161:        fflush(stdout);  // Flush after prompting the player
+        4:  162:        scanf("%d", &move);
+        -:  163:
+        4:  164:        if (move < 1 || move > 9) {
+    #####:  165:            printf("Invalid move. Try again.\n");
+    #####:  166:            fflush(stdout);  // Flush after printing invalid move message
+    #####:  167:            continue;
+        -:  168:        }
+        -:  169:
+        -:  170:        int row, col;
+        4:  171:        getBoardIndices(move, &row, &col);  // Convert the move number to row and column indices
+        -:  172:
+        4:  173:        if (board[row][col] == ' ') {
+        4:  174:            board[row][col] = playerMark;  // Place the player's mark on the board
+        4:  175:            return;  // Exit the function after a valid move is made
+        -:  176:        } else {
+    #####:  177:            printf("That spot is already taken. Try again.\n");
+    #####:  178:            fflush(stdout);  // Flush after printing spot taken message
+        -:  179:        }
+        -:  180:    }
+        -:  181:}
+        -:  182:
+        -:  183:/**
+        -:  184: * @brief The main function for the Tic-Tac-Toe game.
+        -:  185: * 
+        -:  186: * This function initializes the game, processes command-line arguments, and runs the game loop.
+        -:  187: * The game alternates moves between the AI and the player until there is a winner or a draw.
+        -:  188: * 
+        -:  189: * @param argc The number of command-line arguments.
+        -:  190: * @param argv The array of command-line arguments.
+        -:  191: * @return int Returns 0 on successful execution, 1 on error.
+        -:  192: */
+        1:  193:int main(int argc, char *argv[]) {
+        1:  194:    if (argc != 2) {
+    #####:  195:        printf("Error1\n");
+    #####:  196:        fflush(stdout);  // Flush after printing error message
+    #####:  197:        return 1;
+        -:  198:    }
+        -:  199:
+        1:  200:    if (!validateStrategy(argv[1])) {
+    #####:  201:        printf("Error2\n");
+    #####:  202:        fflush(stdout);  // Flush after printing error message
+    #####:  203:        return 1;
+        -:  204:    }
+        -:  205:
+        -:  206:    char board[SIZE][SIZE];  // Initialize the Tic-Tac-Toe board
+        -:  207:    char strategy[10];
+        1:  208:    strcpy(strategy, argv[1]);  // Copy the strategy string to a local variable
+        1:  209:    char aiMark = 'X';  // Define the AI's mark
+        1:  210:    char playerMark = 'O';  // Define the player's mark
+        -:  211:
+        1:  212:    initializeBoard(board);  // Set up the initial empty board
+        -:  213:
+        -:  214:    while (1) {
+        5:  215:        makeAIMove(board, strategy, aiMark);  // Make the AI move based on the strategy
+        5:  216:        displayBoard(board);  // Display the current state of the board
+        -:  217:
+        5:  218:        if (isWinningMove(board, aiMark)) {
+    #####:  219:            printf("AI win\n");
+    #####:  220:            fflush(stdout);  // Flush after printing AI win message
+    #####:  221:            break;  // Exit the loop
+        -:  222:        }
+        -:  223:
+        5:  224:        if (isBoardFull(board)) {
+        1:  225:            printf("DRAW\n");
+        1:  226:            fflush(stdout);  // Flush after printing draw message
+        1:  227:            break;  // Exit the loop
+        -:  228:        }
+        -:  229:
+        4:  230:        makePlayerMove(board, playerMark);  // Prompt the player to make a move
+        4:  231:        displayBoard(board);  // Display the current state of the board
+        -:  232:
+        4:  233:        if (isWinningMove(board, playerMark)) {
+    #####:  234:            printf("AI lost\n");
+    #####:  235:            fflush(stdout);  // Flush after printing AI lost message
+    #####:  236:            break;  // Exit the loop
+        -:  237:        }
+        -:  238:
+        4:  239:        if (isBoardFull(board)) {
+    #####:  240:            printf("DRAW\n");
+    #####:  241:            fflush(stdout);  // Flush after printing draw message
+    #####:  242:            break;  // Exit the loop
+        -:  243:        }
+        -:  244:    }
+        -:  245:
+        1:  246:    return 0;  // Return success
+        -:  247:}
