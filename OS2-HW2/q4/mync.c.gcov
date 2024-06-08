@@ -1,0 +1,545 @@
+        -:    0:Source:mync.c
+        -:    0:Graph:mync.gcno
+        -:    0:Data:mync.gcda
+        -:    0:Runs:5
+        -:    1:#include <stdio.h>
+        -:    2:#include <stdlib.h>
+        -:    3:#include <unistd.h>
+        -:    4:#include <sys/types.h>
+        -:    5:#include <sys/socket.h>
+        -:    6:#include <netinet/in.h>
+        -:    7:#include <arpa/inet.h>
+        -:    8:#include <sys/wait.h>
+        -:    9:#include <string.h>
+        -:   10:#include <getopt.h>
+        -:   11:#include <errno.h>
+        -:   12:#include <fcntl.h>
+        -:   13:#include <signal.h>
+        -:   14:#include <netdb.h>
+        -:   15:#include <poll.h>
+        -:   16:
+        5:   17:void executeCommand(char *args)
+        -:   18:{
+        -:   19:    // Tokenize the input arguments string
+        5:   20:    char *token = strtok(args, " ");
+        5:   21:    if (token == NULL)
+        -:   22:    {
+    #####:   23:        fprintf(stderr, "No arguments provided\n");
+    #####:   24:        exit(1);
+        -:   25:    }
+        -:   26:
+        -:   27:    // Initialize an array to hold the command and its arguments
+        5:   28:    char **arguments = NULL;
+        5:   29:    int n = 0;
+        -:   30:
+        -:   31:    // Parse the tokenized arguments and store them in the array
+       15:   32:    while (token != NULL)
+        -:   33:    {
+       10:   34:        arguments = realloc(arguments, (n + 1) * sizeof(char *));
+       10:   35:        if (arguments == NULL)
+        -:   36:        {
+    #####:   37:            exit(1);
+        -:   38:        }
+       10:   39:        arguments[n++] = token;
+       10:   40:        token = strtok(NULL, " ");
+        -:   41:    }
+        -:   42:
+        -:   43:    // Add a NULL terminator to the arguments array
+        5:   44:    arguments = realloc(arguments, (n + 1) * sizeof(char *));
+        5:   45:    if (arguments == NULL)
+        -:   46:    {
+    #####:   47:        exit(1);
+        -:   48:    }
+        5:   49:    arguments[n] = NULL;
+        -:   50:
+        -:   51:    // Fork a new process to execute the command
+        5:   52:    int pid = fork();
+       10:   53:    if (pid < 0)
+        -:   54:    {
+    #####:   55:        exit(1);
+        -:   56:    }
+        -:   57:
+        -:   58:    // Child process
+       10:   59:    if (pid == 0)
+        -:   60:    {
+        -:   61:        // Execute the command
+        5:   62:        execvp(arguments[0], arguments);
+        -:   63:
+        -:   64:        // If execvp fails, print an error message and exit
+        5:   65:        perror("Error executing command");
+        1:   66:        exit(1);
+        -:   67:    }
+        -:   68:    // Parent process
+        -:   69:    else
+        -:   70:    {
+        -:   71:        // Wait for the child process to finish
+        5:   72:        wait(NULL);
+        -:   73:
+        -:   74:        // Free memory allocated for the arguments array
+        5:   75:        free(arguments);
+        -:   76:
+        -:   77:        // Flush stdout to ensure all output is printed before returning
+        5:   78:        fflush(stdout);
+        -:   79:    }
+        5:   80:}
+        -:   81:
+    #####:   82:void handle_timeout(int signal)
+        -:   83:{
+        -:   84:    // Terminate the process
+    #####:   85:    exit(0);
+        -:   86:}
+        -:   87:
+    #####:   88:void close_descriptors(int *descriptors)
+        -:   89:{
+        -:   90:    // Close descriptors if they are not standard input/output
+    #####:   91:    if (descriptors[0] != STDIN_FILENO)
+        -:   92:    {
+    #####:   93:        close(descriptors[0]);
+        -:   94:    }
+    #####:   95:    if (descriptors[1] != STDOUT_FILENO)
+        -:   96:    {
+    #####:   97:        close(descriptors[1]);
+        -:   98:    }
+    #####:   99:}
+    #####:  100:void setup_TCPServer(int *descriptors, int port, char *b_flag)
+        -:  101:{
+        -:  102:    // Create a TCP socket
+    #####:  103:    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    #####:  104:    if (sockfd < 0)
+        -:  105:    {
+    #####:  106:        perror("Error creating TCP socket");
+    #####:  107:        exit(EXIT_FAILURE);
+        -:  108:    }
+    #####:  109:    printf("TCP socket has been created!\n");
+        -:  110:
+        -:  111:    // Allow the socket to be reused
+    #####:  112:    int optval = 1;
+    #####:  113:    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == -1)
+        -:  114:    {
+    #####:  115:        perror("Error setting socket options");
+    #####:  116:        exit(EXIT_FAILURE);
+        -:  117:    }
+        -:  118:
+        -:  119:    // Set up the server address structure
+        -:  120:    struct sockaddr_in server_addr;
+    #####:  121:    server_addr.sin_family = AF_INET;
+    #####:  122:    server_addr.sin_port = htons(port);
+    #####:  123:    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // Listen to any address
+        -:  124:
+        -:  125:    // Bind the socket
+    #####:  126:    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0)
+        -:  127:    {
+    #####:  128:        perror("Error binding TCP socket");
+    #####:  129:        exit(EXIT_FAILURE);
+        -:  130:    }
+        -:  131:
+        -:  132:    // Listen for connections
+    #####:  133:    if (listen(sockfd, 1) < 0)
+        -:  134:    {
+    #####:  135:        perror("Error listening for connections");
+    #####:  136:        exit(EXIT_FAILURE);
+        -:  137:    }
+        -:  138:
+        -:  139:    // Accept a client connection
+        -:  140:    struct sockaddr_in client_addr;
+    #####:  141:    socklen_t client_len = sizeof(client_addr);
+    #####:  142:    int client_fd = accept(sockfd, (struct sockaddr *)&client_addr, &client_len);
+    #####:  143:    if (client_fd < 0)
+        -:  144:    {
+    #####:  145:        perror("Error accepting client connection");
+    #####:  146:        exit(EXIT_FAILURE);
+        -:  147:    }
+        -:  148:
+        -:  149:    // Set the client file descriptor in the descriptors array
+    #####:  150:    descriptors[0] = client_fd;
+        -:  151:
+        -:  152:    // If bidirectional communication is requested, set the second descriptor to the same client file descriptor
+    #####:  153:    if (b_flag != NULL)
+        -:  154:    {
+    #####:  155:        descriptors[1] = client_fd;
+        -:  156:    }
+    #####:  157:}
+        -:  158:
+        -:  159:// Function to set up a TCP client
+        1:  160:void setup_TCPClient(int *descriptors, char *ip, int port)
+        -:  161:{
+        -:  162:    // Create a TCP socket
+        1:  163:    int sock = socket(AF_INET, SOCK_STREAM, 0);
+        1:  164:    if (sock == -1)
+        -:  165:    {
+    #####:  166:        perror("Error creating socket");
+    #####:  167:        exit(EXIT_FAILURE);
+        -:  168:    }
+        -:  169:
+        -:  170:    // Print message indicating TCP client setup
+        1:  171:    printf("Setting up TCP client to connect to %s:%d\n", ip, port);
+        1:  172:    fflush(stdout);
+        -:  173:
+        -:  174:    // Set up server address structure
+        -:  175:    struct sockaddr_in server_addr;
+        1:  176:    memset(&server_addr, 0, sizeof(server_addr));
+        1:  177:    server_addr.sin_family = AF_INET;
+        1:  178:    server_addr.sin_port = htons(port);
+        -:  179:
+        -:  180:    // Set socket option to allow address reuse
+        1:  181:    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+        -:  182:    {
+    #####:  183:        perror("Error setting socket options");
+    #####:  184:        close(sock);
+    #####:  185:        exit(EXIT_FAILURE);
+        -:  186:    }
+        -:  187:
+        -:  188:    // Convert "localhost" to the loopback address
+        1:  189:    if (strcmp(ip, "localhost") == 0)
+        -:  190:    {
+        1:  191:        ip = "127.0.0.1";
+        -:  192:    }
+        -:  193:
+        -:  194:    // Convert IP address string to binary representation
+        1:  195:    if (inet_pton(AF_INET, ip, &server_addr.sin_addr) <= 0)
+        -:  196:    {
+    #####:  197:        perror("Invalid IP address");
+    #####:  198:        close(sock);
+    #####:  199:        exit(EXIT_FAILURE);
+        -:  200:    }
+        -:  201:
+        -:  202:    // Connect to the server
+        1:  203:    if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+        -:  204:    {
+    #####:  205:        perror("Error connecting to server");
+    #####:  206:        close(sock);
+    #####:  207:        exit(EXIT_FAILURE);
+        -:  208:    }
+        -:  209:
+        -:  210:    // Store the client socket descriptor in the descriptors array
+        1:  211:    descriptors[1] = sock;
+        -:  212:
+        -:  213:    // Print successful connection message
+        1:  214:    printf("Successfully connected to %s:%d\n", ip, port);
+        1:  215:    fflush(stdout);
+        1:  216:}
+        -:  217:
+        2:  218:void setup_UDPServer(int *descriptors, int port, int timeout)
+        -:  219:{
+        -:  220:    // Create a UDP socket
+        2:  221:    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        2:  222:    if (sockfd == -1)
+        -:  223:    {
+    #####:  224:        perror("UDP socket creation error");
+    #####:  225:        close_descriptors(descriptors);
+    #####:  226:        exit(1);
+        -:  227:    }
+        2:  228:    printf("UDP Socket created\n");
+        -:  229:
+        -:  230:    // Enable address reuse for the socket
+        2:  231:    int enable = 1;
+        2:  232:    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+        -:  233:    {
+    #####:  234:        perror("UDP setsockopt error");
+    #####:  235:        close_descriptors(descriptors);
+    #####:  236:        exit(1);
+        -:  237:    }
+        -:  238:
+        -:  239:    // Set up server address
+        -:  240:    struct sockaddr_in server_addr;
+        2:  241:    server_addr.sin_family = AF_INET;
+        2:  242:    server_addr.sin_port = htons(port);
+        2:  243:    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        -:  244:
+        -:  245:    // Bind socket to server address
+        2:  246:    if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+        -:  247:    {
+    #####:  248:        perror("UDP bind error");
+    #####:  249:        close_descriptors(descriptors);
+    #####:  250:        exit(1);
+        -:  251:    }
+        -:  252:
+        -:  253:    // Receive data from client
+        -:  254:    char buffer[1024];
+        -:  255:    struct sockaddr_in client_addr;
+        2:  256:    socklen_t client_addr_len = sizeof(client_addr);
+        2:  257:    int numbytes = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *)&client_addr, &client_addr_len);
+        2:  258:    if (numbytes == -1)
+        -:  259:    {
+    #####:  260:        perror("UDP receive data error");
+    #####:  261:        close_descriptors(descriptors);
+    #####:  262:        exit(1);
+        -:  263:    }
+        -:  264:
+        -:  265:    // Connect to client
+        2:  266:    if (connect(sockfd, (struct sockaddr *)&client_addr, sizeof(client_addr)) == -1)
+        -:  267:    {
+    #####:  268:        perror("UDP connect to client error");
+    #####:  269:        close_descriptors(descriptors);
+    #####:  270:        exit(1);
+        -:  271:    }
+        -:  272:
+        -:  273:    // Send ACK to client
+        2:  274:    if (sendto(sockfd, "ACK", 3, 0, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+        -:  275:    {
+    #####:  276:        perror("UDP send ACK error");
+    #####:  277:        exit(1);
+        -:  278:    }
+        -:  279:
+        -:  280:    // Store the server socket descriptor in the descriptors array
+        2:  281:    descriptors[0] = sockfd;
+        -:  282:    
+        -:  283:    // Set timeout using alarm signal
+        2:  284:    alarm(timeout);
+        2:  285:}
+        -:  286:
+    #####:  287:void setup_UDPClient(int *descriptors, char *ip, int port)
+        -:  288:{
+        -:  289:    // Create a UDP socket
+    #####:  290:    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    #####:  291:    if (sockfd == -1)
+        -:  292:    {
+    #####:  293:        perror("UDP socket creation error");
+    #####:  294:        exit(1);
+        -:  295:    }
+    #####:  296:    printf("UDP client\n");
+    #####:  297:    fflush(stdout);
+        -:  298:
+        -:  299:    // Set up server address
+        -:  300:    struct sockaddr_in server_addr;
+    #####:  301:    server_addr.sin_family = AF_INET;
+    #####:  302:    server_addr.sin_port = htons(port);
+        -:  303:
+        -:  304:    // Convert IP address from text to binary form
+    #####:  305:    if (inet_pton(AF_INET, ip, &server_addr.sin_addr) <= 0)
+        -:  306:    {
+    #####:  307:        perror("Invalid server address");
+    #####:  308:        exit(1);
+        -:  309:    }
+        -:  310:
+        -:  311:    // Connect to the server
+    #####:  312:    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1)
+        -:  313:    {
+    #####:  314:        perror("UDP connect to server error");
+    #####:  315:        exit(1);
+        -:  316:    }
+        -:  317:
+        -:  318:    // Store the client socket descriptor in the descriptors array
+    #####:  319:    descriptors[1] = sockfd; 
+    #####:  320:}
+        -:  321:
+        -:  322:
+    #####:  323:void handle_poll_event(struct pollfd *fds, int *descriptors) {
+        -:  324:    // Function to handle poll events
+    #####:  325:    if (fds[0].revents & POLLIN) {
+        -:  326:        char buffer[1024];
+    #####:  327:        int bytes_read = read(fds[0].fd, buffer, sizeof(buffer));
+    #####:  328:        if (bytes_read == -1) {
+    #####:  329:            fprintf(stderr, "Error reading from input descriptor: %s\n", strerror(errno));
+    #####:  330:            exit(EXIT_FAILURE);
+        -:  331:        }
+    #####:  332:        if (bytes_read == 0) {
+    #####:  333:            return;
+        -:  334:        }
+    #####:  335:        if (write(fds[1].fd, buffer, bytes_read) == -1) {
+    #####:  336:            fprintf(stderr, "Error writing to output descriptor: %s\n", strerror(errno));
+    #####:  337:            exit(EXIT_FAILURE);
+        -:  338:        }
+        -:  339:    }
+        -:  340:
+    #####:  341:    if (fds[1].revents & POLLIN) {
+        -:  342:        char buffer[1024];
+    #####:  343:        int bytes_read = read(fds[1].fd, buffer, sizeof(buffer));
+    #####:  344:        if (bytes_read == -1) {
+    #####:  345:            fprintf(stderr, "Error reading from output descriptor: %s\n", strerror(errno));
+    #####:  346:            exit(EXIT_FAILURE);
+        -:  347:        }
+    #####:  348:        if (bytes_read == 0) {
+    #####:  349:            return;
+        -:  350:        }
+    #####:  351:        if (write(fds[3].fd, buffer, bytes_read) == -1) {
+    #####:  352:            fprintf(stderr, "Error writing to stdout: %s\n", strerror(errno));
+    #####:  353:            exit(EXIT_FAILURE);
+        -:  354:        }
+        -:  355:    }
+        -:  356:
+    #####:  357:    if (fds[2].revents & POLLIN) {
+        -:  358:        char buffer[1024];
+    #####:  359:        int bytes_read = read(fds[2].fd, buffer, sizeof(buffer));
+    #####:  360:        if (bytes_read == -1) {
+    #####:  361:            fprintf(stderr, "Error reading from stdin: %s\n", strerror(errno));
+    #####:  362:            exit(EXIT_FAILURE);
+        -:  363:        }
+    #####:  364:        if (bytes_read == 0) {
+    #####:  365:            return;
+        -:  366:        }
+    #####:  367:        if (write(descriptors[1], buffer, bytes_read) == -1) {
+    #####:  368:            fprintf(stderr, "Error writing to output descriptor: %s\n", strerror(errno));
+    #####:  369:            exit(EXIT_FAILURE);
+        -:  370:        }
+        -:  371:    }
+        -:  372:}
+        -:  373:
+        5:  374:int main(int argc, char *argv[]) {
+        5:  375:    if (argc < 2) {
+        -:  376:        // Ensure there are enough arguments
+    #####:  377:        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    #####:  378:        exit(EXIT_FAILURE);
+        -:  379:    }
+        -:  380:
+        -:  381:    int option;
+        5:  382:    char *exec_command = NULL;
+        5:  383:    char *input_type = NULL;
+        5:  384:    char *output_type = NULL;
+        5:  385:    char *timeout = NULL;
+        -:  386:
+        -:  387:    // Parse command-line options
+       17:  388:    while ((option = getopt(argc, argv, "e:i:o:t:")) != -1) {
+       12:  389:        switch (option) {
+        5:  390:        case 'e':
+        5:  391:            exec_command = optarg;
+        5:  392:            break;
+        2:  393:        case 'i':
+        2:  394:            input_type = optarg;
+        2:  395:            break;
+        1:  396:        case 'o':
+        1:  397:            output_type = optarg;
+        1:  398:            break;
+        4:  399:        case 't':
+        4:  400:            timeout = optarg;
+        4:  401:            break;
+    #####:  402:        default:
+    #####:  403:            fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    #####:  404:            exit(EXIT_FAILURE);
+        -:  405:        }
+        -:  406:    }
+        -:  407:
+        -:  408:    // Set a timeout if specified
+        5:  409:    if (timeout != NULL) {
+        4:  410:        signal(SIGALRM, handle_timeout);
+        4:  411:        alarm(atoi(timeout));
+        -:  412:    }
+        -:  413:
+        -:  414:    int descriptors[2];
+        5:  415:    descriptors[0] = STDIN_FILENO;  // Default input is standard input
+        5:  416:    descriptors[1] = STDOUT_FILENO; // Default output is standard output
+        -:  417:
+        -:  418:    // Set up input type
+        5:  419:    if (input_type != NULL) {
+        2:  420:        printf(" i = : %s\n", input_type);
+        2:  421:        if (strncmp(input_type, "TCPS", 4) == 0) {
+    #####:  422:            input_type += 4;
+    #####:  423:            int port = atoi(input_type);
+    #####:  424:            setup_TCPServer(descriptors, port, NULL);
+        2:  425:        } else if (strncmp(input_type, "UDPS", 4) == 0) {
+        2:  426:            input_type += 4;
+        2:  427:            int port = atoi(input_type);
+        2:  428:            if (timeout != NULL) {
+        1:  429:                setup_UDPServer(descriptors, port, atoi(timeout));
+        -:  430:            } else {
+        1:  431:                setup_UDPServer(descriptors, port, 0);
+        -:  432:            }
+        -:  433:        } else {
+    #####:  434:            fprintf(stderr, "Invalid server.\n");
+    #####:  435:            exit(1);
+        -:  436:        }
+        -:  437:    }
+        -:  438:
+        -:  439:    // Set up output type
+        5:  440:    if (output_type != NULL) {
+        1:  441:        if (strncmp(output_type, "TCPC", 4) == 0) {
+        1:  442:            output_type += 4;
+        1:  443:            char *ip_server = strtok(output_type, ",");
+        -:  444:
+        1:  445:            if (ip_server == NULL) {
+    #####:  446:                fprintf(stderr, "Invalid server IP\n");
+    #####:  447:                close_descriptors(descriptors);
+    #####:  448:                exit(1);
+        -:  449:            }
+        -:  450:
+        1:  451:            char *port_number = strtok(NULL, ",");
+        1:  452:            if (port_number == NULL) {
+    #####:  453:                fprintf(stderr, "Invalid port\n");
+    #####:  454:                close_descriptors(descriptors);
+    #####:  455:                exit(1);
+        -:  456:            }
+        1:  457:            int port = atoi(port_number);
+        1:  458:            setup_TCPClient(descriptors, ip_server, port);
+    #####:  459:        } else if (strncmp(output_type, "UDPC", 4) == 0) {
+    #####:  460:            output_type += 4;
+    #####:  461:            char *ip_server = strtok(output_type, ",");
+    #####:  462:            if (ip_server == NULL) {
+    #####:  463:                fprintf(stderr, "Invalid server IP\n");
+    #####:  464:                close_descriptors(descriptors);
+    #####:  465:                exit(1);
+        -:  466:            }
+        -:  467:
+    #####:  468:            char *port_number = strtok(NULL, ",");
+    #####:  469:            if (port_number == NULL) {
+    #####:  470:                fprintf(stderr, "Invalid port\n");
+    #####:  471:                close_descriptors(descriptors);
+    #####:  472:                exit(1);
+        -:  473:            }
+    #####:  474:            int port = atoi(port_number);
+    #####:  475:            setup_UDPClient(descriptors, ip_server, port);
+        -:  476:        } else {
+    #####:  477:            fprintf(stderr, "Invalid server.\n");
+    #####:  478:            close_descriptors(descriptors);
+    #####:  479:            exit(1);
+        -:  480:        }
+        -:  481:    }
+        -:  482:
+        -:  483:    // Execute the command if specified
+        5:  484:    if (exec_command != NULL) {
+        5:  485:        if (descriptors[0] != STDIN_FILENO) {
+        2:  486:            if (dup2(descriptors[0], STDIN_FILENO) == -1) {
+    #####:  487:                close(descriptors[0]);
+    #####:  488:                if (descriptors[1] != STDOUT_FILENO) {
+    #####:  489:                    close(descriptors[1]);
+        -:  490:                }
+    #####:  491:                fprintf(stderr, "failed to duplicating input descriptor: %s\n", strerror(errno));
+    #####:  492:                exit(EXIT_FAILURE);
+        -:  493:            }
+        -:  494:        }
+        5:  495:        if (descriptors[1] != STDOUT_FILENO) {
+        1:  496:            if (dup2(descriptors[1], STDOUT_FILENO) == -1) {
+    #####:  497:                close(descriptors[1]);
+    #####:  498:                if (descriptors[0] != STDIN_FILENO) {
+    #####:  499:                    close(descriptors[0]);
+        -:  500:                }
+    #####:  501:                fprintf(stderr, "faialed to duplicating output descriptor: %s\n", strerror(errno));
+    #####:  502:                exit(EXIT_FAILURE);
+        -:  503:            }
+        -:  504:        }
+        5:  505:        executeCommand(exec_command);
+        -:  506:   } else {
+        -:  507:    struct pollfd poll_file_descriptors[4];
+    #####:  508:    int num_file_descriptors = 4;
+        -:  509:
+        -:  510:    // Set up poll descriptors
+    #####:  511:    poll_file_descriptors[0].fd = descriptors[0];
+    #####:  512:    poll_file_descriptors[0].events = POLLIN;
+        -:  513:
+    #####:  514:    poll_file_descriptors[1].fd = descriptors[1];
+    #####:  515:    poll_file_descriptors[1].events = POLLIN;
+        -:  516:
+    #####:  517:    poll_file_descriptors[2].fd = STDIN_FILENO;
+    #####:  518:    poll_file_descriptors[2].events = POLLIN;
+        -:  519:
+    #####:  520:    poll_file_descriptors[3].fd = STDOUT_FILENO;
+    #####:  521:    poll_file_descriptors[3].events = POLLIN;
+        -:  522:
+        -:  523:    // Polling loop
+    #####:  524:    while (1) {
+    #####:  525:        int poll_result = poll(poll_file_descriptors, num_file_descriptors, -1);
+    #####:  526:        if (poll_result == -1) {
+    #####:  527:            fprintf(stderr, "Error polling: %s\n", strerror(errno));
+    #####:  528:            exit(EXIT_FAILURE);
+        -:  529:        }
+        -:  530:
+        -:  531:        // Handle poll events
+    #####:  532:        handle_poll_event(poll_file_descriptors, descriptors);
+        -:  533:    }
+        -:  534:}
+        -:  535:
+        -:  536:// Close descriptors before exiting
+        5:  537:close(descriptors[0]);
+        5:  538:close(descriptors[1]);
+        -:  539:
+        5:  540:return 0;
+        -:  541:}
