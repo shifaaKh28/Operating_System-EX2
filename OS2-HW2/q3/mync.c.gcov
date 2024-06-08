@@ -1,0 +1,259 @@
+        -:    0:Source:mync.c
+        -:    0:Graph:mync.gcno
+        -:    0:Data:mync.gcda
+        -:    0:Runs:3
+        -:    1:#include <stdio.h>      // Standard I/O functions
+        -:    2:#include <stdlib.h>     // Standard library functions
+        -:    3:#include <unistd.h>     // UNIX standard function definitions
+        -:    4:#include <sys/types.h>  // System data types
+        -:    5:#include <sys/wait.h>   // Waiting for process termination
+        -:    6:#include <string.h>     // String manipulation functions
+        -:    7:#include <sys/socket.h> // Socket programming functions
+        -:    8:#include <netinet/in.h> // Internet address family
+        -:    9:#include <netdb.h>      // Network database operations
+        -:   10:#include <arpa/inet.h>  // Definitions for internet operations
+        -:   11:
+        -:   12:// Function to set up a TCP server
+        3:   13:int setup_server(int port)
+        -:   14:{
+        3:   15:    printf("Setting up server on port %d\n", port);
+        3:   16:    int sockfd = socket(AF_INET, SOCK_STREAM, 0); // Create a socket
+        3:   17:    if (sockfd < 0)
+        -:   18:    {
+    #####:   19:        perror("Error opening socket"); // Print error message if socket creation fails
+    #####:   20:        exit(1);                        // Exit the program
+        -:   21:    }
+        -:   22:
+        -:   23:    // Set SO_REUSEADDR option
+        3:   24:    int optval = 1;
+        3:   25:    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
+        -:   26:    {
+    #####:   27:        perror("Error setting socket option"); // Print error message if setting socket option fails
+    #####:   28:        close(sockfd);                         // Close the socket
+    #####:   29:        exit(1);                               // Exit the program
+        -:   30:    }
+        -:   31:
+        -:   32:    struct sockaddr_in serv_addr;             // Structure for server address
+        3:   33:    memset(&serv_addr, 0, sizeof(serv_addr)); // Clear the structure
+        3:   34:    serv_addr.sin_family = AF_INET;           // Set address family to IPv4
+        3:   35:    serv_addr.sin_addr.s_addr = INADDR_ANY;   // Accept connections on any interface
+        3:   36:    serv_addr.sin_port = htons(port);         // Set the port number
+        -:   37:
+        3:   38:    if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+        -:   39:    {
+    #####:   40:        perror("Error on binding"); // Print error message if binding fails
+    #####:   41:        close(sockfd);              // Close the socket
+    #####:   42:        exit(1);                    // Exit the program
+        -:   43:    }
+        -:   44:
+        3:   45:    printf("Socket bound to port %d\n", port);
+        -:   46:
+        3:   47:    listen(sockfd, 5); // Listen for connections
+        3:   48:    printf("Server is listening\n");
+        -:   49:
+        -:   50:    struct sockaddr_in cli_addr;                                           // Structure for client address
+        3:   51:    socklen_t clilen = sizeof(cli_addr);                                   // Length of client address
+        3:   52:    int newsockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen); // Accept connection
+        3:   53:    if (newsockfd < 0)
+        -:   54:    {
+    #####:   55:        perror("Error on accept"); // Print error message if accept fails
+    #####:   56:        close(sockfd);             // Close the socket
+    #####:   57:        exit(1);                   // Exit the program
+        -:   58:    }
+        -:   59:
+        3:   60:    printf("Connection accepted\n");
+        -:   61:
+        3:   62:    return newsockfd; // Return the new socket file descriptor
+        -:   63:}
+        -:   64:
+        -:   65:// Function to set up a TCP client
+        1:   66:int setup_client(const char *hostname, int port)
+        -:   67:{
+        1:   68:    printf("Setting up client for host %s on port %d\n", hostname, port);
+        1:   69:    int sockfd = socket(AF_INET, SOCK_STREAM, 0); // Create a socket
+        1:   70:    if (sockfd < 0)
+        -:   71:    {
+    #####:   72:        perror("Error opening socket"); // Print error message if socket creation fails
+    #####:   73:        exit(1);                        // Exit the program
+        -:   74:    }
+        -:   75:
+        -:   76:    struct sockaddr_in serv_addr;                     // Structure for server address
+        1:   77:    struct hostent *server = gethostbyname(hostname); // Get host by name
+        1:   78:    if (server == NULL)
+        -:   79:    {
+    #####:   80:        fprintf(stderr, "Error, no such host\n"); // Print error message if host not found
+    #####:   81:        close(sockfd);                            // Close the socket
+    #####:   82:        exit(1);                                  // Exit the program
+        -:   83:    }
+        1:   84:    memset(&serv_addr, 0, sizeof(serv_addr));                                     // Clear the structure
+        1:   85:    serv_addr.sin_family = AF_INET;                                               // Set address family to IPv4
+        1:   86:    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr_list[0], server->h_length); // Copy server address
+        1:   87:    serv_addr.sin_port = htons(port);                                             // Set the port number
+        -:   88:
+        1:   89:    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+        -:   90:    {
+    #####:   91:        perror("Error connecting"); // Print error message if connection fails
+    #####:   92:        close(sockfd);              // Close the socket
+    #####:   93:        exit(1);                    // Exit the program
+        -:   94:    }
+        -:   95:
+        1:   96:    printf("Client setup complete\n");
+        1:   97:    return sockfd; // Return the socket file descriptor
+        -:   98:}
+        -:   99:
+        -:  100:// Function to handle input and output redirection for each move
+        3:  101:void redirect_io(int input_fd, int output_fd, char *command)
+        -:  102:{
+        -:  103:    char *cmd_args[256];                // Array to store command and arguments
+        3:  104:    int arg_count = 0;                  // Argument count
+        3:  105:    char *token = strtok(command, " "); // Tokenize the command string
+        9:  106:    while (token != NULL)
+        -:  107:    {
+        6:  108:        cmd_args[arg_count++] = token; // Store each token in the array
+        6:  109:        token = strtok(NULL, " ");     // Get the next token
+        -:  110:    }
+        3:  111:    cmd_args[arg_count] = NULL; // Null-terminate the array
+        -:  112:
+        -:  113:    char exec_command[256]; // Buffer for executable command
+        3:  114:    if (strchr(cmd_args[0], '/') == NULL)
+        -:  115:    {
+    #####:  116:        snprintf(exec_command, sizeof(exec_command), "./%s", cmd_args[0]); // Create the full path for the executable
+    #####:  117:        cmd_args[0] = exec_command;                                        // Update the command with the full path
+        -:  118:    }
+        -:  119:
+        3:  120:    pid_t pid = fork(); // Fork a child process
+        6:  121:    if (pid < 0)
+        -:  122:    {
+    #####:  123:        perror("Error"); // Print error message if fork fails
+    #####:  124:        exit(1);         // Exit the program
+        -:  125:    }
+        6:  126:    else if (pid == 0)
+        -:  127:    {
+        -:  128:        // Child process
+        3:  129:        if (dup2(input_fd, STDIN_FILENO) == -1)
+        -:  130:        {
+    #####:  131:            perror("dup2 input_fd failed"); // Print error message if input redirection fails
+    #####:  132:            exit(1);                        // Exit the program
+        -:  133:        }
+        3:  134:        if (dup2(output_fd, STDOUT_FILENO) == -1)
+        -:  135:        {
+    #####:  136:            perror("dup2 output_fd failed"); // Print error message if output redirection fails
+    #####:  137:            exit(1);                         // Exit the program
+        -:  138:        }
+        3:  139:        execvp(cmd_args[0], cmd_args); // Execute the command
+        3:  140:        perror("exec failed");         // Print error message if exec fails
+    #####:  141:        exit(1);                       // Exit the program
+        -:  142:    }
+        -:  143:    else
+        -:  144:    {
+        -:  145:        // Parent process
+        -:  146:        int status;
+        3:  147:        waitpid(pid, &status, 0); // Wait for child process to complete
+        3:  148:        if (WIFEXITED(status))
+        -:  149:        {
+        3:  150:            printf("Child exited with status %d\n", WEXITSTATUS(status)); // Print exit status of child process
+        -:  151:        }
+    #####:  152:        else if (WIFSIGNALED(status))
+        -:  153:        {
+    #####:  154:            printf("Child killed by signal %d\n", WTERMSIG(status)); // Print signal that killed the child process
+        -:  155:        }
+        3:  156:        close(input_fd);  // Close input file descriptor
+        3:  157:        close(output_fd); // Close output file descriptor
+        -:  158:    }
+        3:  159:}
+        -:  160:
+        -:  161:// Main function
+        3:  162:int main(int argc, char *argv[])
+        -:  163:{
+        3:  164:    if (argc < 5)
+        -:  165:    {
+    #####:  166:        fprintf(stderr, "Usage: %s -e command -i input_mode [-o output_mode] [-b bidirectional_mode]\n", argv[0]);
+    #####:  167:        exit(1); // Print usage message and exit if arguments are insufficient
+        -:  168:    }
+        -:  169:
+        3:  170:    int input_fd = STDIN_FILENO;   // Default input file descriptor
+        3:  171:    int output_fd = STDOUT_FILENO; // Default output file descriptor
+        3:  172:    char *command = NULL;          // Command to execute
+        3:  173:    int bidirectional = 0;         // Flag to indicate bidirectional communication
+        -:  174:
+       10:  175:    for (int i = 1; i < argc; i++)
+        -:  176:    {
+        7:  177:        if (strcmp(argv[i], "-i") == 0)
+        -:  178:        { // Check for input mode option
+        2:  179:            i++;
+        2:  180:            if (strncmp(argv[i], "TCPS", 4) == 0)
+        -:  181:            {                                  // Check for TCP server mode
+        2:  182:                int port = atoi(argv[i] + 4);  // Extract port number
+        2:  183:                input_fd = setup_server(port); // Set up server and get input file descriptor
+        -:  184:            }
+        -:  185:            else
+        -:  186:            {
+    #####:  187:                fprintf(stderr, "Invalid input mode\n"); // Print error for invalid input mode
+    #####:  188:                exit(1);                                 // Exit the program
+        -:  189:            }
+        -:  190:        }
+        5:  191:        else if (strcmp(argv[i], "-o") == 0)
+        -:  192:        { // Check for output mode option
+        1:  193:            i++;
+        1:  194:            if (strncmp(argv[i], "TCPC", 4) == 0)
+        -:  195:            {                                         // Check for TCP client mode
+        1:  196:                char *input = argv[i] + 4;            // Extract input string
+        1:  197:                char *localhost = strtok(input, ","); // Extract local host
+        1:  198:                if (localhost == NULL)
+        -:  199:                {
+    #####:  200:                    fprintf(stderr, "Invalid output mode, missing localhost\n"); // Print error for missing localhost
+    #####:  201:                    exit(1);                                                     // Exit the program
+        -:  202:                }
+        1:  203:                char *port_str = strtok(NULL, ","); // Extract port string
+        1:  204:                if (port_str == NULL)
+        -:  205:                {
+    #####:  206:                    fprintf(stderr, "Invalid output mode, missing port\n"); // Print error for missing port
+    #####:  207:                    exit(1);                                                // Exit the program
+        -:  208:                }
+        1:  209:                int port = atoi(port_str);                 // Convert port string to integer
+        1:  210:                output_fd = setup_client(localhost, port); // Set up client and get output file descriptor
+        -:  211:            }
+        -:  212:            else
+        -:  213:            {
+    #####:  214:                fprintf(stderr, "Invalid output mode\n"); // Print error for invalid output mode
+    #####:  215:                exit(1);                                  // Exit the program
+        -:  216:            }
+        -:  217:        }
+        4:  218:        else if (strcmp(argv[i], "-b") == 0)
+        -:  219:        { // Check for bidirectional mode option
+        1:  220:            i++;
+        1:  221:            if (strncmp(argv[i], "TCPS", 4) == 0)
+        -:  222:            {                                  // Check for bidirectional TCP server mode
+        1:  223:                int port = atoi(argv[i] + 4);  // Extract port number
+        1:  224:                input_fd = setup_server(port); // Set up server and get input file descriptor
+        1:  225:                output_fd = input_fd;          // Set output file descriptor to input file descriptor
+        1:  226:                bidirectional = 1;             // Set bidirectional flag
+        -:  227:            }
+        -:  228:            else
+        -:  229:            {
+    #####:  230:                fprintf(stderr, "Invalid bidirectional mode\n"); // Print error for invalid bidirectional mode
+    #####:  231:                exit(1);                                         // Exit the program
+        -:  232:            }
+        -:  233:        }
+        3:  234:        else if (strcmp(argv[i], "-e") == 0)
+        -:  235:        { // Check for command option
+        3:  236:            i++;
+        3:  237:            command = argv[i]; // Set command to execute
+        -:  238:        }
+        -:  239:    }
+        -:  240:
+        3:  241:    if (command != NULL)
+        -:  242:    {                                               // If command is specified
+        3:  243:        printf("Executing command: %s\n", command); // Print the command
+        3:  244:        if (bidirectional)
+        -:  245:        {
+        1:  246:            redirect_io(input_fd, input_fd, command); // Redirect IO for bidirectional communication
+        -:  247:        }
+        -:  248:        else
+        -:  249:        {
+        2:  250:            redirect_io(input_fd, output_fd, command); // Redirect IO for unidirectional communication
+        -:  251:        }
+        -:  252:    }
+        -:  253:
+        3:  254:    return 0; // Return success
+        -:  255:}
